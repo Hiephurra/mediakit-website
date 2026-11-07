@@ -357,9 +357,10 @@ function etterTegning() {
 function tomtVarsel() {
   return `<div class="panel"><h2>Kom i gang</h2>
   <p>Ingen data ennå. Velg én av disse:</p>
-  <div class="rad"><button class="primar" data-act="last-backup">Last inn startdata / backup-fil</button>
+  <div class="rad"><button class="primar" data-act="gaa" data-fane="innstillinger">Koble til felles lagring</button>
+  <button data-act="last-backup">Last inn startdata / backup-fil</button>
   <button data-act="gaa" data-fane="budsjett">Sett opp budsjettet selv</button></div>
-  <p class="note">Data lagres bare i denne nettleseren. Ta backup under Innstillinger av og til.</p></div>`;
+  <p class="note">Koble til felles lagring først, så deles alt dere legger inn mellom telefonene.</p></div>`;
 }
 
 function visOversikt() {
