@@ -463,7 +463,7 @@ function visImporter() {
   h += `<h2>Legg inn enkeltutgift</h2><p class="note">For Vipps, kontant eller noe som ikke kommer på kortfakturaen.</p>
   <div class="panel"><div class="rad">
     <input type="date" id="ny-dato" value="${iDag()}">
-    <input id="ny-tekst" placeholder="Hva (f.eks. Vipps til Kari)" style="flex:1;min-width:160px">
+    <input id="ny-tekst" placeholder="Hva (f.eks. Vipps til barnevakt)" style="flex:1;min-width:160px">
     <input type="number" id="ny-belop" placeholder="Beløp" step="0.01">
     <select id="ny-kort">${S.innstillinger.kort.map(k => `<option value="${k.id}" ${k.id === 'annet' ? 'selected' : ''}>${esc(k.navn)}</option>`).join('')}</select>
     <select id="ny-utfall"><option value="">Plasser automatisk</option>${utfallValg({}, true).map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select>
