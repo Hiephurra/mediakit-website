@@ -1,0 +1,9 @@
+{
+  "name": "Husholdningsøkonomi",
+  "short_name": "Økonomi",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f6f5f1",
+  "theme_color": "#1f6f5c",
+  "icons": [{ "src": "ikon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Husholdningsøkonomi</title>
+<meta name="theme-color" content="#1f6f5c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="ikon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="ikon.svg">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="topp">
+  <div class="topp-inner">
+    <h1 id="app-navn">Husholdningsøkonomi</h1>
+    <nav id="faner" aria-label="Hovedmeny">
+      <button data-fane="oversikt" class="aktiv">Oversikt</button>
+      <button data-fane="svar">Trenger svar <span id="svar-teller" class="teller" hidden></span></button>
+      <button data-fane="importer">Legg inn</button>
+      <button data-fane="overforing">Overføring</button>
+      <button data-fane="transaksjoner">Transaksjoner</button>
+      <button data-fane="budsjett">Budsjett</button>
+      <button data-fane="arkiv">Arkiv</button>
+      <button data-fane="innstillinger">Innstillinger</button>
+    </nav>
+  </div>
+</header>
+<main id="innhold"></main>
+<div id="toast" role="status" aria-live="polite"></div>
+<input type="file" id="kvittering-input" accept="image/*,application/pdf" capture="environment" hidden>
+<dialog id="bilde-dialog"><img alt="Kvittering"><form method="dialog"><button>Lukk</button></form></dialog>
+</body>
+</html>
