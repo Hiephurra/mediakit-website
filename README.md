@@ -12,7 +12,12 @@ En enkel app for husholdningsbudsjett og regnskap. Målet er minst mulig adminis
 
 ## Hvor ligger dataene?
 
-Bare i nettleseren der appen brukes (ingenting sendes til noen server). Under **Innstillinger** kan du laste ned en backup og laste den inn igjen, også på en annen maskin eller telefon. Ta backup jevnlig, appen minner deg på det.
+I nettleseren der appen brukes, og – hvis dere kobler til **felles lagring** – i et eget privat GitHub-repo (`mediakit-data`) som bare dere har tilgang til. Da ser alle telefonene de samme tallene og kvitteringene, og appen synkroniserer når den åpnes og når noe endres. Endringer fra to telefoner samtidig slås sammen.
+
+**Koble til første gang:** Innstillinger → Felles lagring → følg stegene for å lage en GitHub-nøkkel som bare har tilgang til `mediakit-data`.
+**Koble til den andre telefonen:** På den første telefonen: «Koble til en annen telefon» → kopier oppsettkoden → lim den inn på den andre telefonen.
+
+Under **Innstillinger** kan du også laste ned en backup-fil.
 
 Private tall ligger aldri i dette repoet. Startdataene (budsjett og transaksjoner fra 2026) lastes inn fra en egen fil via **Innstillinger → Last inn backup / startdata**.
 

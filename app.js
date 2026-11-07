@@ -51,10 +51,36 @@ function lesTilstand() {
   try { const r = localStorage.getItem(LAGRINGSNOKKEL); if (r) return normaliser(JSON.parse(r)); } catch (e) { console.error(e); }
   return tomTilstand();
 }
-function lagre() {
+function lagreLokalt() {
   try { localStorage.setItem(LAGRINGSNOKKEL, JSON.stringify(S)); }
   catch (e) { toast('Kunne ikke lagre i nettleseren: ' + e.message); }
 }
+function lagre() {
+  const endret = stempel();
+  lagreLokalt();
+  if (endret) planleggSynk();
+}
+
+/* Tidsstempler per del og per transaksjon, så to telefoner kan slås sammen uten å miste noe */
+const SEKSJONER = ['poster', 'faste', 'personer', 'historikk', 'ekstra', 'overfort', 'innstillinger'];
+let bilde = null;
+function stempel() {
+  const naa = Date.now();
+  if (!S.endret || typeof S.endret !== 'object') S.endret = {};
+  if (!S.slettet || typeof S.slettet !== 'object') S.slettet = {};
+  const ny = { sek: {}, t: new Map() };
+  for (const k of SEKSJONER) ny.sek[k] = JSON.stringify(S[k]);
+  for (const t of S.transaksjoner) { const { endret, ...rest } = t; ny.t.set(t.id, JSON.stringify(rest)); }
+  let endret = false;
+  if (bilde) {
+    for (const k of SEKSJONER) if (bilde.sek[k] !== ny.sek[k]) { S.endret[k] = naa; endret = true; }
+    for (const t of S.transaksjoner) if (bilde.t.get(t.id) !== ny.t.get(t.id)) { t.endret = naa; endret = true; }
+    for (const id of bilde.t.keys()) if (!ny.t.has(id)) { S.slettet[id] = naa; endret = true; }
+  }
+  bilde = ny;
+  return endret;
+}
+function nyttBilde() { bilde = null; stempel(); }
 
 /* ---------- kvitteringer i IndexedDB ---------- */
 let dbP = null;
@@ -360,6 +386,8 @@ function visOversikt() {
     const harForrige = S.transaksjoner.some(t => t.kort === k.id && t.dato >= forrige.fra && t.dato <= forrige.til);
     if (harKort && !harForrige) varsler.push(`<div class="varsel">${esc(k.navn)}: fakturaen for ${datoNo(forrige.fra)}–${datoNo(forrige.til)} er ikke lagt inn. <button class="liten" data-act="gaa" data-fane="importer">Legg inn</button></div>`);
   }
+  if (!synkPa()) varsler.push(`<div class="varsel ok">Vil dere se de samme tallene på begge telefonene? <button class="liten" data-act="gaa" data-fane="innstillinger">Koble til felles lagring</button></div>`);
+  else if (synk.feil) varsler.push(`<div class="varsel feil">Felles lagring: ${esc(synk.sisteFeil || 'synk feilet')} <button class="liten" data-act="gaa" data-fane="innstillinger">Se innstillinger</button></div>`);
   const sb = S.innstillinger.sisteBackup;
   if (S.transaksjoner.length && (!sb || (Date.now() - new Date(sb)) > 30 * 864e5)) varsler.push(`<div class="varsel">Det er ${sb ? 'over en måned siden' : 'ikke tatt'} backup. <button class="liten" data-act="backup">Ta backup nå</button></div>`);
   h += varsler.join('');
@@ -598,7 +626,7 @@ function visArkiv() {
 
 function visInnstillinger() {
   const i = S.innstillinger;
-  return `<h2>Backup</h2><p class="note">Alt ligger bare i denne nettleseren. Ta backup jevnlig, og bruk backup-filen for å flytte til en annen maskin eller telefon.</p>
+  return visSynkPanel() + `<h2>Backup</h2><p class="note">${synkPa() ? 'Dataene deles via felles lagring. En backup-fil er likevel lurt å ha.' : 'Alt ligger bare i denne nettleseren.'} Ta backup jevnlig, og bruk backup-filen for å flytte til en annen maskin eller telefon.</p>
   <div class="panel"><div class="rad"><button class="primar" data-act="backup">Last ned backup</button><button data-act="last-backup">Last inn backup / startdata</button></div>
   <p class="liten-tekst">Siste backup: ${i.sisteBackup ? datoNo(i.sisteBackup.slice(0, 10)) : 'aldri'} · ${S.transaksjoner.length} transaksjoner</p></div>
   <h2>Generelt</h2><div class="panel">
@@ -654,7 +682,7 @@ document.addEventListener('click', async e => {
     }
     case 'backup': await lastNedBackup(); break;
     case 'last-backup': velgBackup(); break;
-    case 'slett-alt': if (confirm('Slette ALLE data i denne nettleseren? Ta backup først hvis du er usikker.')) { localStorage.removeItem(LAGRINGSNOKKEL); await kvTom(); S = tomTilstand(); tegn(); } break;
+    case 'slett-alt': if (confirm('Slette ALLE data i denne nettleseren? Ta backup først hvis du er usikker.')) { localStorage.removeItem(LAGRINGSNOKKEL); await kvTom(); S = tomTilstand(); nyttBilde(); tegn(); } break;
     case 'ny-post': S.poster.push({ navn: 'Ny post', budsjett: 0 }); lagre(); tegn(); break;
     case 'slett-post': if (confirm(`Fjerne posten «${S.poster[i].navn}»? Transaksjoner beholdes.`)) { S.poster.splice(i, 1); lagre(); tegn(); } break;
     case 'ny-fast': S.faste.push({ gruppe: b.dataset.g, post: '', belop: 0, merknad: '' }); lagre(); tegn(); break;
@@ -712,8 +740,9 @@ document.getElementById('kvittering-input').addEventListener('change', async e =
   catch (err) { toast('Kunne ikke lagre kvitteringen: ' + err.message); }
 });
 async function visKvittering(id) {
-  const data = await kvHent(id);
-  if (!data) { toast('Fant ikke kvitteringen i denne nettleseren'); return; }
+  let data = await kvHent(id);
+  if (!data && synkPa()) { toast('Henter kvittering …'); try { data = await hentDeltKvittering(id); } catch (e) { toast(e.message); return; } }
+  if (!data) { toast('Fant ikke kvitteringen'); return; }
   if (data.startsWith('data:application/pdf')) { const w = window.open(); if (w) w.document.write(`<iframe src="${data}" style="border:0;width:100%;height:100vh"></iframe>`); return; }
   const d = $('#bilde-dialog'); d.querySelector('img').src = data; d.showModal();
 }
@@ -737,7 +766,7 @@ function velgBackup() {
       if (!d || d.app !== 'husholdningsbudsjett') throw new Error('Dette ser ikke ut som en backup fra appen.');
       if (S.transaksjoner.length && !confirm('Dette erstatter dataene som ligger her nå. Fortsette?')) return;
       const kv = d.kvitteringer || {}; delete d.kvitteringer;
-      S = normaliser(d); lagre();
+      S = normaliser(d); nyttBilde(); lagreLokalt(); planleggSynk();
       for (const [id, v] of Object.entries(kv)) await kvSett(id, v);
       toast(`Lastet inn ${S.transaksjoner.length} transaksjoner`); fane = 'oversikt'; tegn();
     } catch (e) { alert('Kunne ikke lese filen: ' + e.message); }
@@ -745,4 +774,176 @@ function velgBackup() {
   inn.click();
 }
 
+/* ---------- felles lagring i et privat GitHub-repo ---------- */
+const SYNK_NOKKEL = 'husholdningsokonomi-synk';
+let synk = (() => { try { return JSON.parse(localStorage.getItem(SYNK_NOKKEL)) || {}; } catch (e) { return {}; } })();
+const lagreSynk = () => { try { localStorage.setItem(SYNK_NOKKEL, JSON.stringify(synk)); } catch (e) { } };
+const synkPa = () => !!(synk.token && synk.repo);
+let synkPagar = null, synkIgjen = false, synkTimer = null, venterTegning = false;
+
+function settSynkStatus(tekst, feil = false) {
+  synk.status = tekst; synk.feil = feil;
+  const el = $('#synk-status'); if (!el) return;
+  el.hidden = !synkPa(); el.textContent = tekst; el.classList.toggle('feil', feil);
+}
+function planleggSynk() { if (!synkPa()) return; clearTimeout(synkTimer); synkTimer = setTimeout(synkroniser, 1500); }
+
+const b64Inn = str => { const b = new TextEncoder().encode(str); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };
+const b64Ut = b => new TextDecoder().decode(Uint8Array.from(atob(String(b).replace(/\s/g, '')), c => c.charCodeAt(0)));
+function stabil(v) {
+  if (Array.isArray(v)) return '[' + v.map(stabil).join(',') + ']';
+  if (v && typeof v === 'object') return '{' + Object.keys(v).sort().filter(k => v[k] !== undefined).map(k => JSON.stringify(k) + ':' + stabil(v[k])).join(',') + '}';
+  return JSON.stringify(v);
+}
+async function ghKall(sti, opt = {}) {
+  const r = await fetch(`https://api.github.com/repos/${synk.repo}/contents/${sti}${opt.method ? '' : '?t=' + Date.now()}`, {
+    ...opt, cache: 'no-store',
+    headers: { Authorization: `Bearer ${synk.token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(opt.headers || {}) },
+  });
+  if (r.status === 401) throw new Error('Nøkkelen virker ikke lenger (utløpt eller slettet). Lag en ny under Innstillinger.');
+  if (r.status === 403 || (r.status === 404 && opt.method)) throw new Error('Nøkkelen har ikke tilgang til ' + synk.repo + '. Sjekk at repoet er valgt og at Contents er «Read and write».');
+  return r;
+}
+async function hentFjern(sti = 'data.json') {
+  const r = await ghKall(sti);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error('GitHub svarte ' + r.status);
+  const j = await r.json();
+  let tekst = j.content ? b64Ut(j.content) : await (await ghKall(sti, { headers: { Accept: 'application/vnd.github.raw' } })).text();
+  return { tekst, sha: j.sha };
+}
+async function skrivFjern(sti, tekst, sha, melding) {
+  const r = await ghKall(sti, { method: 'PUT', body: JSON.stringify({ message: melding, content: b64Inn(tekst), ...(sha ? { sha } : {}) }) });
+  if (r.status === 409 || r.status === 422) return null; // noen andre skrev samtidig
+  if (!r.ok) throw new Error('GitHub svarte ' + r.status + ' ved lagring');
+  return (await r.json()).content.sha;
+}
+function slaSammen(a, b) {
+  const ut = JSON.parse(JSON.stringify(a));
+  const ea = a.endret || {}, eb = b.endret || {};
+  ut.endret = {};
+  for (const k of SEKSJONER) {
+    if ((eb[k] || 0) > (ea[k] || 0) && b[k] !== undefined) { ut[k] = JSON.parse(JSON.stringify(b[k])); ut.endret[k] = eb[k]; }
+    else ut.endret[k] = ea[k] || 0;
+  }
+  ut.slettet = Object.assign({}, a.slettet || {});
+  for (const [id, t] of Object.entries(b.slettet || {})) ut.slettet[id] = Math.max(ut.slettet[id] || 0, t);
+  const m = new Map((a.transaksjoner || []).map(t => [t.id, t]));
+  for (const t of b.transaksjoner || []) { const x = m.get(t.id); if (!x || (t.endret || 0) > (x.endret || 0)) m.set(t.id, JSON.parse(JSON.stringify(t))); }
+  ut.transaksjoner = [...m.values()].filter(t => !(ut.slettet[t.id] && ut.slettet[t.id] >= (t.endret || 0)));
+  return normaliser(ut);
+}
+function tegnHvisLedig() {
+  const a = document.activeElement;
+  if (a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && a.closest('#innhold')) { venterTegning = true; return; }
+  venterTegning = false; tegn();
+}
+document.addEventListener('focusout', () => setTimeout(() => { if (venterTegning) tegnHvisLedig(); }, 300));
+
+function synkroniser() {
+  if (!synkPa()) return Promise.resolve();
+  if (synkPagar) { synkIgjen = true; return synkPagar; }
+  synkPagar = (async () => {
+    try {
+      settSynkStatus('Synkroniserer…');
+      for (let forsok = 0; forsok < 5; forsok++) {
+        const fjern = await hentFjern();
+        let fjernData = null;
+        if (fjern) { try { fjernData = normaliser(JSON.parse(fjern.tekst)); } catch (e) { throw new Error('Den felles datafilen er ødelagt.'); } }
+        if (fjernData) {
+          const sammen = slaSammen(S, fjernData);
+          if (stabil(sammen) !== stabil(S)) { S = sammen; nyttBilde(); lagreLokalt(); tegnHvisLedig(); }
+        }
+        if (fjernData && stabil(fjernData) === stabil(S)) { synk.sha = fjern.sha; break; }
+        const sha = await skrivFjern('data.json', JSON.stringify(S), fjern && fjern.sha, 'Oppdatert fra ' + (synk.enhet || 'appen'));
+        if (sha) { synk.sha = sha; break; }
+      }
+      synk.sist = new Date().toISOString(); lagreSynk();
+      const t = new Date(); settSynkStatus(`Synkronisert ${pad(t.getHours())}:${pad(t.getMinutes())}`);
+      lastOppKvitteringer();
+    } catch (e) {
+      console.error(e); settSynkStatus('Synk feilet', true); synk.sisteFeil = e.message; lagreSynk();
+      if (fane === 'innstillinger') tegnHvisLedig();
+    } finally {
+      synkPagar = null;
+      if (synkIgjen) { synkIgjen = false; setTimeout(synkroniser, 200); }
+    }
+  })();
+  return synkPagar;
+}
+async function lastOppKvitteringer() {
+  for (const t of S.transaksjoner.filter(t => t.kvittering && !t.kvitteringDelt)) {
+    try {
+      const data = await kvHent(t.id); if (!data) continue;
+      const fjern = await hentFjern(`kvitteringer/${t.id}.txt`);
+      if (!fjern) await skrivFjern(`kvitteringer/${t.id}.txt`, data, null, 'Kvittering');
+      t.kvitteringDelt = true; lagre();
+    } catch (e) { console.error(e); return; }
+  }
+}
+async function hentDeltKvittering(id) {
+  if (!synkPa()) return null;
+  const f = await hentFjern(`kvitteringer/${id}.txt`);
+  if (f) await kvSett(id, f.tekst);
+  return f ? f.tekst : null;
+}
+async function kobleTil(repo, token) {
+  repo = String(repo || '').trim().replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '');
+  token = String(token || '').trim();
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !token) { toast('Fyll inn både repo og nøkkel'); return; }
+  synk = { repo, token, enhet: /iphone|ipad|android/i.test(navigator.userAgent) ? 'telefon' : 'datamaskin' }; lagreSynk();
+  await synkroniser();
+  if (synk.feil) { toast(synk.sisteFeil || 'Kunne ikke koble til'); }
+  else toast('Koblet til felles lagring');
+  fane = 'innstillinger'; tegn();
+}
+const oppsettkode = () => btoa(JSON.stringify({ r: synk.repo, t: synk.token }));
+function lesOppsettkode(kode) { try { const o = JSON.parse(atob(String(kode).trim())); return o.r && o.t ? o : null; } catch (e) { return null; } }
+function standardRepo() { const h = location.hostname; return h.endsWith('.github.io') ? h.split('.')[0] + '/mediakit-data' : ''; }
+
+function visSynkPanel() {
+  if (synkPa()) {
+    return `<h2>Felles lagring</h2><div class="panel">
+      <p><b>${synk.feil ? '⚠️ ' + esc(synk.sisteFeil || 'Synk feilet') : '✅ Koblet til'}</b> – data deles via det private repoet <code>${esc(synk.repo)}</code>.</p>
+      <p class="liten-tekst">Sist synkronisert: ${synk.sist ? new Date(synk.sist).toLocaleString('nb-NO') : 'aldri'}. Appen synkroniserer når den åpnes og når noe endres.</p>
+      <div class="rad"><button class="primar" data-act="synk-naa">Synkroniser nå</button><button data-act="vis-kode">Koble til en annen telefon</button><button class="fare" data-act="koble-fra">Koble fra</button></div>
+      ${ui.visKode ? `<div class="varsel"><p>Åpne appen på den andre telefonen, gå til <b>Innstillinger → Felles lagring</b> og lim inn denne koden. Send den bare til den som skal bruke appen, den gir tilgang til dataene.</p>
+        <div class="rad"><input readonly value="${esc(oppsettkode())}" style="flex:1" id="kode-felt"><button data-act="kopier-kode">Kopier</button></div></div>` : ''}
+    </div>`;
+  }
+  const lenke = 'https://github.com/settings/personal-access-tokens/new?name=Husholdningsokonomi&description=' + encodeURIComponent('Felles lagring for budsjettappen') + '&contents=write';
+  return `<h2>Felles lagring (deling mellom telefoner)</h2><div class="panel">
+    <p>Koble appen til et privat GitHub-repo, så ser alle telefonene de samme tallene og kvitteringene.</p>
+    <h3>Har du en kode fra den andre telefonen?</h3>
+    <div class="rad"><input id="oppsett-kode" placeholder="Lim inn oppsettkoden" style="flex:1"><button class="primar" data-act="bruk-kode">Koble til</button></div>
+    <h3>Første gang (gjøres én gang)</h3>
+    <ol class="liten-tekst" style="font-size:.9rem;color:var(--fg)">
+      <li><a href="${lenke}" target="_blank" rel="noopener">Åpne GitHub for å lage en nøkkel</a>.</li>
+      <li>Under <b>Expiration</b>: velg <b>No expiration</b> (eller lengst mulig).</li>
+      <li>Under <b>Repository access</b>: velg <b>Only select repositories</b> og velg <b>mediakit-data</b>.</li>
+      <li>Under <b>Permissions → Contents</b>: sjekk at det står <b>Read and write</b>.</li>
+      <li>Trykk <b>Generate token</b>, kopier nøkkelen og lim den inn her:</li>
+    </ol>
+    <div class="rad"><input id="synk-repo" value="${esc(standardRepo())}" placeholder="brukernavn/mediakit-data"><input id="synk-token" type="password" placeholder="Nøkkel (github_pat_…)" style="flex:1" autocomplete="off"><button class="primar" data-act="koble-til">Koble til</button></div>
+    <p class="liten-tekst">Det som ligger på denne telefonen nå, slås sammen med det som allerede er delt. Ingenting blir borte.</p>
+  </div>`;
+}
+
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  switch (b.dataset.act) {
+    case 'koble-til': await kobleTil($('#synk-repo').value, $('#synk-token').value); break;
+    case 'bruk-kode': { const o = lesOppsettkode($('#oppsett-kode').value); if (!o) { toast('Koden ser ikke riktig ut'); break; } await kobleTil(o.r, o.t); break; }
+    case 'synk-naa': await synkroniser(); tegn(); break;
+    case 'vis-kode': ui.visKode = !ui.visKode; tegn(); break;
+    case 'kopier-kode': try { await navigator.clipboard.writeText(oppsettkode()); toast('Kopiert'); } catch (err) { $('#kode-felt').select(); } break;
+    case 'koble-fra': if (confirm('Koble fra felles lagring på denne enheten? Dataene her beholdes, men endringer deles ikke lenger.')) { synk = {}; lagreSynk(); settSynkStatus(''); tegn(); } break;
+  }
+});
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') synkroniser(); });
+setInterval(() => { if (document.visibilityState === 'visible') synkroniser(); }, 60000);
+
+nyttBilde();
 tegn();
+settSynkStatus(synkPa() ? 'Synkroniserer…' : '');
+synkroniser();

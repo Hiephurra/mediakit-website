@@ -13,7 +13,12 @@
 html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 15px; line-height: 1.45; }
 .topp { background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10; }
 .topp-inner { max-width: 1100px; margin: 0 auto; padding: 12px 16px 0; }
-h1 { font-size: 1.25rem; margin: 0 0 8px; }
+h1 { font-size: 1.25rem; margin: 0; }
+.tittel-rad { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+#synk-status { font-size: .8rem; color: var(--muted); white-space: nowrap; }
+#synk-status.feil { color: var(--bad); }
+code { font-size: .9em; background: var(--line); padding: 1px 5px; border-radius: 4px; }
+a { color: var(--accent); }
 nav { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
 nav button { background: none; border: 0; border-bottom: 3px solid transparent; padding: 8px 12px; font: inherit; color: var(--muted); cursor: pointer; white-space: nowrap; }
 nav button.aktiv { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
