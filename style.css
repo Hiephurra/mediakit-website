@@ -14,7 +14,10 @@ html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: va
 .topp { background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 10; }
 .topp-inner { max-width: 1100px; margin: 0 auto; padding: 12px 16px 0; }
 h1 { font-size: 1.25rem; margin: 0; }
-.tittel-rad { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+html, body { overflow-x: hidden; }
+.tittel-rad { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; margin-bottom: 8px; }
+.tittel-rad h1, .kpi, .panel, .varsel { min-width: 0; overflow-wrap: anywhere; }
+main { overflow-x: hidden; }
 #synk-status { font-size: .8rem; color: var(--muted); white-space: nowrap; }
 #synk-status.feil { color: var(--bad); }
 code { font-size: .9em; background: var(--line); padding: 1px 5px; border-radius: 4px; }

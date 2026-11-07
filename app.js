@@ -390,7 +390,7 @@ function visOversikt() {
   if (!synkPa()) varsler.push(`<div class="varsel ok">Vil dere se de samme tallene på begge telefonene? <button class="liten" data-act="gaa" data-fane="innstillinger">Koble til felles lagring</button></div>`);
   else if (synk.feil) varsler.push(`<div class="varsel feil">Felles lagring: ${esc(synk.sisteFeil || 'synk feilet')} <button class="liten" data-act="gaa" data-fane="innstillinger">Se innstillinger</button></div>`);
   const sb = S.innstillinger.sisteBackup;
-  if (S.transaksjoner.length && (!sb || (Date.now() - new Date(sb)) > 30 * 864e5)) varsler.push(`<div class="varsel">Det er ${sb ? 'over en måned siden' : 'ikke tatt'} backup. <button class="liten" data-act="backup">Ta backup nå</button></div>`);
+  if (!synkPa() && S.transaksjoner.length && (!sb || (Date.now() - new Date(sb)) > 30 * 864e5)) varsler.push(`<div class="varsel">Det er ${sb ? 'over en måned siden' : 'ikke tatt'} backup. <button class="liten" data-act="backup">Ta backup nå</button></div>`);
   h += varsler.join('');
 
   h += `<div class="rad"><h2 style="margin:0">Variable kostnader</h2><select data-act="velg-mnd">${mnder.map(m => `<option value="${m}" ${m === ym ? 'selected' : ''}>${mndNavn(m)}</option>`).join('')}</select></div>`;
@@ -860,7 +860,7 @@ function synkroniser() {
         if (sha) { synk.sha = sha; break; }
       }
       synk.sist = new Date().toISOString(); lagreSynk();
-      const t = new Date(); settSynkStatus(`Synkronisert ${pad(t.getHours())}:${pad(t.getMinutes())}`);
+      const t = new Date(); settSynkStatus(`✓ Delt ${pad(t.getHours())}:${pad(t.getMinutes())}`);
       lastOppKvitteringer();
     } catch (e) {
       console.error(e); settSynkStatus('Synk feilet', true); synk.sisteFeil = e.message; lagreSynk();
