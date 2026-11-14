@@ -40,7 +40,7 @@ Ren statisk side, ingen byggesteg: `index.html`, `style.css`, `app.js` (~980 lin
 
 **Felles lagring:** GitHub Contents API mot `mediakit-data` med en fine-grained token som brukeren lager selv (Contents read/write, bare det repoet). Tokenet ligger i localStorage `husholdningsokonomi-synk` på hver enhet. Den andre telefonen kobles til med en «oppsettkode» (base64 av repo+token). Sammenslåing: per transaksjon (nyeste `endret` vinner) og per del (nyeste `endret[del]` vinner). Slettinger via gravsteiner. Konflikt (409/422) → hent, slå sammen og prøv igjen. Synkroniserer ved oppstart, når appen blir synlig, hvert minutt og 1,5 s etter en endring. Testet mot en simulert GitHub: sammenslåing, sletting og samtidige skrivinger virker.
 
-## PWA (trinn 1, versjon 7)
+## PWA (trinn 1, versjon 7, rettet i versjon 8)
 
 - `sw.js` lagrer appfilene og SheetJS på enheten, så appen åpner uten nett. Strategi: nett først med 2,5 s tidsfrist, ellers lagret kopi. Kall til api.github.com går alltid rett på nett.
 - Data ligger som før i localStorage + IndexedDB. Uten nett viser statusen «Uten nett – lagret på enheten», og appen synker selv når nettet er tilbake (`online`-hendelsen).
@@ -52,7 +52,7 @@ Ren statisk side, ingen byggesteg: `index.html`, `style.css`, `app.js` (~980 lin
 ## Publisering
 
 1. Endre filene og commit (forfatter: Hiep Tran).
-2. **Øk versjonsnummeret tre steder, likt:** `?v=N` i `index.html`, `VERSJON` + fillisten i `sw.js`, og `APP_VERSJON` i `app.js` (nå `7`). Ellers viser telefonen gammel kopi.
+2. **Øk versjonsnummeret tre steder, likt:** `?v=N` i `index.html`, `VERSJON` + fillisten i `sw.js`, og `APP_VERSJON` i `app.js` (nå `8`). Ellers viser telefonen gammel kopi.
 3. `git push`. Pages oppdateres på 1–2 minutter.
 
 ## Viktige beslutninger og begrensninger
@@ -66,7 +66,7 @@ Ren statisk side, ingen byggesteg: `index.html`, `style.css`, `app.js` (~980 lin
 
 0. **Trinn 2 (innlogging) er droppet** etter brukerens valg 14.11.2026: han vil ikke ha Supabase. Dagens deling med GitHub-nøkkel + oppsettkode beholdes som synkronisering. Ikke foreslå innloggingstjeneste på nytt uten at han ber om det.
 
-1. **Kanten kuttes på iPhone.** Siden var litt for bred i Safari (høyre kant kuttet). Rettingen i `v=6` (menyen brytes på flere linjer på mobil, `overflow-x: clip`) er ikke bekreftet på telefonen. Feilen vises ikke i Chromium-emulering. Be om skjermbilde.
+1. **Kanten kuttes på iPhone.** Siden var litt for bred i Safari (høyre kant kuttet). `v=6` lot menyen brytes på flere linjer og la til `overflow-x: clip`. 14.11.2026: sannsynlig årsak funnet: feltene hadde 15px skrift, og iPhone zoomer inn (og blir stående innzoomet) når man trykker i et felt under 16px. `v=8` gir felter 16px på mobil. Kan ikke vises i Chromium-emulering; lokalt er ingen fane bredere enn 375px. Ikke bekreftet på telefonen ennå – be om skjermbilde.
 2. Konas telefon er sannsynligvis ikke koblet til ennå (Innstillinger → Koble til en annen telefon → oppsettkode).
 3. Posten **Alkohol** har budsjett 0. I regnearket lå den inne i Husholdning. Brukeren bør bestemme beløpet.
 4. **SAS Mastercard** oktober-faktura er ikke lagt inn. Ingen ekte SAS- eller Trumf-eksport er testet ennå, bare en syntetisk Amex-CSV. Første ekte fil kan avsløre kolonneformater som må håndteres.

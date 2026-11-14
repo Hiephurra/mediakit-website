@@ -101,3 +101,9 @@ main { max-width: min(1100px, 100vw); }
 main { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
 #toast { bottom: calc(18px + env(safe-area-inset-bottom)); }
 #synk-status.frakoblet { color: var(--warn); }
+
+/* iPhone zoomer inn når man trykker i et felt med skrift under 16px, og blir stående
+   innzoomet – da ser det ut som høyre kant er kuttet. 16px i felter hindrer det. */
+@media (max-width: 600px), (pointer: coarse) {
+  input, select, textarea { font-size: 16px; }
+}

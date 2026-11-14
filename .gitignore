@@ -2,3 +2,4 @@ privat/
 *.backup.json
 startdata*.json
 .DS_Store
+.claude/

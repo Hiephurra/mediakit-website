@@ -952,7 +952,7 @@ window.addEventListener('online', () => { toast('Nett igjen – synkroniserer');
 window.addEventListener('offline', () => settSynkStatus(UTEN_NETT, false, true));
 
 /* ---------- app på telefonen (PWA): virker uten nett ---------- */
-const APP_VERSJON = 7;
+const APP_VERSJON = 8;
 const erInstallert = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.error(e)));
