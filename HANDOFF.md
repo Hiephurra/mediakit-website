@@ -22,7 +22,7 @@ Repo-navnet «mediakit-website» ble valgt av brukeren selv, selv om det ikke pa
 
 ## Arkitektur
 
-Ren statisk side, ingen byggesteg: `index.html`, `style.css`, `app.js` (~950 linjer), `manifest.webmanifest`, `ikon.svg`. Excel leses med SheetJS 0.18.5 fra cdnjs.
+Ren statisk side, ingen byggesteg: `index.html`, `style.css`, `app.js` (~980 linjer), `sw.js`, `manifest.webmanifest`, `ikon.svg` + `ikon-180/192/512.png`. Excel leses med SheetJS 0.18.5 fra cdnjs.
 
 **Faner:** Oversikt · Trenger svar · Legg inn · Overføring · Transaksjoner · Budsjett · Arkiv · Innstillinger.
 
@@ -40,10 +40,19 @@ Ren statisk side, ingen byggesteg: `index.html`, `style.css`, `app.js` (~950 lin
 
 **Felles lagring:** GitHub Contents API mot `mediakit-data` med en fine-grained token som brukeren lager selv (Contents read/write, bare det repoet). Tokenet ligger i localStorage `husholdningsokonomi-synk` på hver enhet. Den andre telefonen kobles til med en «oppsettkode» (base64 av repo+token). Sammenslåing: per transaksjon (nyeste `endret` vinner) og per del (nyeste `endret[del]` vinner). Slettinger via gravsteiner. Konflikt (409/422) → hent, slå sammen og prøv igjen. Synkroniserer ved oppstart, når appen blir synlig, hvert minutt og 1,5 s etter en endring. Testet mot en simulert GitHub: sammenslåing, sletting og samtidige skrivinger virker.
 
+## PWA (trinn 1, versjon 7)
+
+- `sw.js` lagrer appfilene og SheetJS på enheten, så appen åpner uten nett. Strategi: nett først med 2,5 s tidsfrist, ellers lagret kopi. Kall til api.github.com går alltid rett på nett.
+- Data ligger som før i localStorage + IndexedDB. Uten nett viser statusen «Uten nett – lagret på enheten», og appen synker selv når nettet er tilbake (`online`-hendelsen).
+- Innstillinger har panelet «App på telefonen» med installasjonssteg og «Se etter ny versjon».
+- **iPhone:** appen på Hjem-skjermen har eget lager, adskilt fra Safari. Den starter tom og må kobles til med oppsettkoden på nytt.
+- Testet lokalt: appen laster og virker med serveren slått av. Ikke bekreftet på ekte iPhone.
+- Lokal test: `/Users/hieptran/Claude/.claude/launch.json` (server «budsjett», port 8765).
+
 ## Publisering
 
 1. Endre filene og commit (forfatter: Hiep Tran).
-2. **Øk versjonsnummeret** `?v=N` på `style.css` og `app.js` i `index.html` (nå `v=6`). Ellers viser iPhone gammel kopi, fordi GitHub Pages mellomlagrer i 10 min.
+2. **Øk versjonsnummeret tre steder, likt:** `?v=N` i `index.html`, `VERSJON` + fillisten i `sw.js`, og `APP_VERSJON` i `app.js` (nå `7`). Ellers viser telefonen gammel kopi.
 3. `git push`. Pages oppdateres på 1–2 minutter.
 
 ## Viktige beslutninger og begrensninger
@@ -54,6 +63,8 @@ Ren statisk side, ingen byggesteg: `index.html`, `style.css`, `app.js` (~950 lin
 - Startdataene (2026-budsjett, 182 Amex-transaksjoner + Hieps private, arkiv) er lagt inn i `mediakit-data/data.json`. Brukerens telefon er koblet til og synker.
 
 ## Åpne punkter
+
+0. **Trinn 2: innlogging og synkronisering** er ikke bygget. Dagens deling bruker GitHub-nøkkel + oppsettkode. Ekte innlogging krever en tjeneste (f.eks. Supabase) som brukeren må opprette konto hos.
 
 1. **Kanten kuttes på iPhone.** Siden var litt for bred i Safari (høyre kant kuttet). Rettingen i `v=6` (menyen brytes på flere linjer på mobil, `overflow-x: clip`) er ikke bekreftet på telefonen. Feilen vises ikke i Chromium-emulering. Be om skjermbilde.
 2. Konas telefon er sannsynligvis ikke koblet til ennå (Innstillinger → Koble til en annen telefon → oppsettkode).

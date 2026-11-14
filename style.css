@@ -95,3 +95,9 @@ main { max-width: min(1100px, 100vw); }
   .skjul-mobil { display: none; }
   .kpi .verdi { font-size: 1.25rem; }
 }
+
+/* Installert app (PWA): plass til klokke/hakk og hjemstrek på iPhone */
+.topp-inner { padding-top: calc(12px + env(safe-area-inset-top)); padding-left: calc(16px + env(safe-area-inset-left)); padding-right: calc(16px + env(safe-area-inset-right)); }
+main { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+#toast { bottom: calc(18px + env(safe-area-inset-bottom)); }
+#synk-status.frakoblet { color: var(--warn); }

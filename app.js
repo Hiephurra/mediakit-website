@@ -388,7 +388,7 @@ function visOversikt() {
     if (harKort && !harForrige) varsler.push(`<div class="varsel">${esc(k.navn)}: fakturaen for ${datoNo(forrige.fra)}–${datoNo(forrige.til)} er ikke lagt inn. <button class="liten" data-act="gaa" data-fane="importer">Legg inn</button></div>`);
   }
   if (!synkPa()) varsler.push(`<div class="varsel ok">Vil dere se de samme tallene på begge telefonene? <button class="liten" data-act="gaa" data-fane="innstillinger">Koble til felles lagring</button></div>`);
-  else if (synk.feil) varsler.push(`<div class="varsel feil">Felles lagring: ${esc(synk.sisteFeil || 'synk feilet')} <button class="liten" data-act="gaa" data-fane="innstillinger">Se innstillinger</button></div>`);
+  else if (synk.feil && !synk.frakoblet) varsler.push(`<div class="varsel feil">Felles lagring: ${esc(synk.sisteFeil || 'synk feilet')} <button class="liten" data-act="gaa" data-fane="innstillinger">Se innstillinger</button></div>`);
   const sb = S.innstillinger.sisteBackup;
   if (!synkPa() && S.transaksjoner.length && (!sb || (Date.now() - new Date(sb)) > 30 * 864e5)) varsler.push(`<div class="varsel">Det er ${sb ? 'over en måned siden' : 'ikke tatt'} backup. <button class="liten" data-act="backup">Ta backup nå</button></div>`);
   h += varsler.join('');
@@ -627,7 +627,7 @@ function visArkiv() {
 
 function visInnstillinger() {
   const i = S.innstillinger;
-  return visSynkPanel() + `<h2>Backup</h2><p class="note">${synkPa() ? 'Dataene deles via felles lagring. En backup-fil er likevel lurt å ha.' : 'Alt ligger bare i denne nettleseren.'} Ta backup jevnlig, og bruk backup-filen for å flytte til en annen maskin eller telefon.</p>
+  return visSynkPanel() + visAppPanel() + `<h2>Backup</h2><p class="note">${synkPa() ? 'Dataene deles via felles lagring. En backup-fil er likevel lurt å ha.' : 'Alt ligger bare i denne nettleseren.'} Ta backup jevnlig, og bruk backup-filen for å flytte til en annen maskin eller telefon.</p>
   <div class="panel"><div class="rad"><button class="primar" data-act="backup">Last ned backup</button><button data-act="last-backup">Last inn backup / startdata</button></div>
   <p class="liten-tekst">Siste backup: ${i.sisteBackup ? datoNo(i.sisteBackup.slice(0, 10)) : 'aldri'} · ${S.transaksjoner.length} transaksjoner</p></div>
   <h2>Generelt</h2><div class="panel">
@@ -782,11 +782,13 @@ const lagreSynk = () => { try { localStorage.setItem(SYNK_NOKKEL, JSON.stringify
 const synkPa = () => !!(synk.token && synk.repo);
 let synkPagar = null, synkIgjen = false, synkTimer = null, venterTegning = false;
 
-function settSynkStatus(tekst, feil = false) {
-  synk.status = tekst; synk.feil = feil;
+function settSynkStatus(tekst, feil = false, frakoblet = false) {
+  synk.status = tekst; synk.feil = feil; synk.frakoblet = frakoblet;
   const el = $('#synk-status'); if (!el) return;
-  el.hidden = !synkPa(); el.textContent = tekst; el.classList.toggle('feil', feil);
+  el.hidden = !tekst; el.textContent = tekst; el.classList.toggle('feil', feil); el.classList.toggle('frakoblet', frakoblet);
 }
+const UTEN_NETT = 'Uten nett – lagret på enheten';
+const utenNett = e => navigator.onLine === false || (e instanceof TypeError);
 function planleggSynk() { if (!synkPa()) return; clearTimeout(synkTimer); synkTimer = setTimeout(synkroniser, 1500); }
 
 const b64Inn = str => { const b = new TextEncoder().encode(str); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };
@@ -842,7 +844,8 @@ function tegnHvisLedig() {
 document.addEventListener('focusout', () => setTimeout(() => { if (venterTegning) tegnHvisLedig(); }, 300));
 
 function synkroniser() {
-  if (!synkPa()) return Promise.resolve();
+  if (!synkPa()) { settSynkStatus(navigator.onLine === false ? UTEN_NETT : '', false, navigator.onLine === false); return Promise.resolve(); }
+  if (navigator.onLine === false) { settSynkStatus(UTEN_NETT, false, true); return Promise.resolve(); }
   if (synkPagar) { synkIgjen = true; return synkPagar; }
   synkPagar = (async () => {
     try {
@@ -863,7 +866,9 @@ function synkroniser() {
       const t = new Date(); settSynkStatus(`✓ Delt ${pad(t.getHours())}:${pad(t.getMinutes())}`);
       lastOppKvitteringer();
     } catch (e) {
-      console.error(e); settSynkStatus('Synk feilet', true); synk.sisteFeil = e.message; lagreSynk();
+      console.error(e);
+      if (utenNett(e)) settSynkStatus(UTEN_NETT, false, true); // deles automatisk når nettet er tilbake
+      else { settSynkStatus('Synk feilet', true); synk.sisteFeil = e.message; lagreSynk(); }
       if (fane === 'innstillinger') tegnHvisLedig();
     } finally {
       synkPagar = null;
@@ -939,9 +944,31 @@ document.addEventListener('click', async e => {
     case 'vis-kode': ui.visKode = !ui.visKode; tegn(); break;
     case 'kopier-kode': try { await navigator.clipboard.writeText(oppsettkode()); toast('Kopiert'); } catch (err) { $('#kode-felt').select(); } break;
     case 'koble-fra': if (confirm('Koble fra felles lagring på denne enheten? Dataene her beholdes, men endringer deles ikke lenger.')) { synk = {}; lagreSynk(); settSynkStatus(''); tegn(); } break;
+    case 'oppdater-app': if (navigator.onLine === false) { toast('Krever nett'); break; } try { const r = await navigator.serviceWorker.getRegistration(); if (r) await r.update(); } catch (err) { } location.reload(); break;
   }
 });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') synkroniser(); });
+window.addEventListener('online', () => { toast('Nett igjen – synkroniserer'); synkroniser(); });
+window.addEventListener('offline', () => settSynkStatus(UTEN_NETT, false, true));
+
+/* ---------- app på telefonen (PWA): virker uten nett ---------- */
+const APP_VERSJON = 7;
+const erInstallert = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.error(e)));
+}
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => { }); // be nettleseren om ikke å rydde bort dataene
+function visAppPanel() {
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const steg = ios
+    ? '<li>Åpne denne siden i <b>Safari</b>.</li><li>Trykk på <b>Del</b>-knappen (firkanten med pil opp).</li><li>Velg <b>Legg til på Hjem-skjerm</b> og trykk <b>Legg til</b>.</li>'
+    : '<li>Åpne menyen i nettleseren (⋮ eller installer-ikonet i adressefeltet).</li><li>Velg <b>Installer app</b> / <b>Legg til på startskjermen</b>.</li>';
+  return `<h2>App på telefonen</h2><div class="panel">${erInstallert()
+    ? '<p><b>✅ Installert som app.</b> Den åpner og virker uten nett. Alt du gjør lagres på telefonen og deles når nettet er tilbake.</p>'
+    : `<p>Legg appen på Hjem-skjermen, så åpner den som en vanlig app og virker uten nett.</p><ol>${steg}</ol>
+       ${synkPa() ? '<p class="liten-tekst"><b>Viktig:</b> Appen på Hjem-skjermen starter tom. Trykk «Koble til en annen telefon» over og kopier koden først, og lim den inn i appen etterpå. Da kommer alle tallene tilbake.</p>' : ''}`}
+    <div class="rad"><button data-act="oppdater-app">Se etter ny versjon</button><span class="liten-tekst">Versjon ${APP_VERSJON}</span></div></div>`;
+}
 setInterval(() => { if (document.visibilityState === 'visible') synkroniser(); }, 60000);
 
 nyttBilde();
