@@ -64,7 +64,7 @@ Ren statisk side, ingen byggesteg: `index.html`, `style.css`, `app.js` (~980 lin
 
 ## Åpne punkter
 
-0. **Trinn 2: innlogging og synkronisering** er ikke bygget. Dagens deling bruker GitHub-nøkkel + oppsettkode. Ekte innlogging krever en tjeneste (f.eks. Supabase) som brukeren må opprette konto hos.
+0. **Trinn 2 (innlogging) er droppet** etter brukerens valg 14.11.2026: han vil ikke ha Supabase. Dagens deling med GitHub-nøkkel + oppsettkode beholdes som synkronisering. Ikke foreslå innloggingstjeneste på nytt uten at han ber om det.
 
 1. **Kanten kuttes på iPhone.** Siden var litt for bred i Safari (høyre kant kuttet). Rettingen i `v=6` (menyen brytes på flere linjer på mobil, `overflow-x: clip`) er ikke bekreftet på telefonen. Feilen vises ikke i Chromium-emulering. Be om skjermbilde.
 2. Konas telefon er sannsynligvis ikke koblet til ennå (Innstillinger → Koble til en annen telefon → oppsettkode).
