@@ -337,6 +337,12 @@ function manedsrad(ar, mnd) {
   return { ym, inntekt: sumGruppe('Inntekt'), faste: sumGruppe('Fast kostnad') + sumGruppe('Sparing'), budsjett: variabeltBudsjett(), variabelt, kilde: 'transaksjoner' };
 }
 const ramme = p => Math.round((Number(p.lonn) || 0) * 15 / 85);
+// Hvem eier denne telefonen? Lagres bare på enheten (deles ikke), så hver ser sin egen 15 %-ramme.
+const MEG_NOKKEL = 'husholdningsokonomi-meg';
+const lesMeg = () => { try { return localStorage.getItem(MEG_NOKKEL) || ''; } catch (e) { return ''; } };
+const minPerson = () => S.personer.find(p => p.navn === lesMeg());
+const velgMegHtml = () => `<p>Hvem bruker denne telefonen? Da vises bare din egen ramme her.</p>
+  <div class="rad">${S.personer.map(p => `<button data-act="velg-meg" data-navn="${esc(p.navn)}">${esc(p.navn)}</button>`).join(' ')}</div>`;
 
 /* ---------- visning ---------- */
 function tegn() {
@@ -419,13 +425,17 @@ function visOversikt() {
   const andre = Object.keys(forbruk).filter(n => !S.poster.some(p => p.navn === n) && forbruk[n]);
   if (andre.length) h += `<p class="note">Ført på poster som ikke finnes i budsjettet: ${andre.map(n => `${esc(n)} (${kr(forbruk[n])})`).join(', ')}.</p>`;
 
-  // personlig ramme
+  // personlig ramme – hver telefon viser bare eierens egen ramme (ikke felles visning)
   if (S.personer.length) {
-    h += `<h2>Personlig 15 %-ramme – ${mndNavn(ym)}</h2><div class="panel">${S.personer.map(p => {
+    const p = minPerson();
+    h += `<h2>Min 15 %-ramme – ${mndNavn(ym)}</h2><div class="panel">`;
+    if (p) {
       const r = ramme(p);
       const f = S.transaksjoner.filter(t => t.status === 'privat' && t.eier === p.navn && iMnd(t, ym)).reduce((s, t) => s + t.belop, 0);
-      return `<div class="bar-rad"><div>${esc(p.navn)}</div><div class="bar ${f > r ? 'over' : ''}"><span style="width:${r ? Math.min(100, f / r * 100) : 0}%"></span></div><div class="bar-tall">${kr(f)} / ${kr(r)}</div></div>`;
-    }).join('')}<p class="note">Private kjøp på felles kort. Rammen er lønn til husholdningen × 15/85.</p></div>`;
+      h += `<div class="bar-rad"><div>${esc(p.navn)}</div><div class="bar ${f > r ? 'over' : ''}"><span style="width:${r ? Math.min(100, f / r * 100) : 0}%"></span></div><div class="bar-tall">${kr(f)} / ${kr(r)}</div></div>
+        <p class="note">Private kjøp på felles kort. Rammen er lønn til husholdningen × 15/85. Bare du ser din ramme her.</p>`;
+    } else h += velgMegHtml();
+    h += `</div>`;
   }
 
   // år
@@ -634,7 +644,9 @@ function visArkiv() {
 
 function visInnstillinger() {
   const i = S.innstillinger;
-  return visSynkPanel() + visAppPanel() + `<h2>Backup</h2><p class="note">${synkPa() ? 'Dataene deles via felles lagring. En backup-fil er likevel lurt å ha.' : 'Alt ligger bare i denne nettleseren.'} Ta backup jevnlig, og bruk backup-filen for å flytte til en annen maskin eller telefon.</p>
+  const meg = minPerson();
+  const megPanel = S.personer.length ? `<h2>Denne telefonen</h2><div class="panel"><div class="rad"><span>${meg ? `Tilhører <b>${esc(meg.navn)}</b>. Oversikt viser bare din 15 %-ramme.` : 'Ikke valgt ennå.'}</span><button class="liten" data-act="bytt-meg">${meg ? 'Bytt' : 'Velg'}</button></div></div>` : '';
+  return visSynkPanel() + visAppPanel() + megPanel + `<h2>Backup</h2><p class="note">${synkPa() ? 'Dataene deles via felles lagring. En backup-fil er likevel lurt å ha.' : 'Alt ligger bare i denne nettleseren.'} Ta backup jevnlig, og bruk backup-filen for å flytte til en annen maskin eller telefon.</p>
   <div class="panel"><div class="rad"><button class="primar" data-act="backup">Last ned backup</button><button data-act="last-backup">Last inn backup / startdata</button></div>
   <p class="liten-tekst">Siste backup: ${i.sisteBackup ? datoNo(i.sisteBackup.slice(0, 10)) : 'aldri'} · ${S.transaksjoner.length} transaksjoner</p></div>
   <h2>Generelt</h2><div class="panel">
@@ -695,6 +707,8 @@ document.addEventListener('click', async e => {
     case 'slett-post': if (confirm(`Fjerne posten «${S.poster[i].navn}»? Transaksjoner beholdes.`)) { S.poster.splice(i, 1); lagre(); tegn(); } break;
     case 'ny-fast': S.faste.push({ gruppe: b.dataset.g, post: '', belop: 0, merknad: '' }); lagre(); tegn(); break;
     case 'slett-fast': S.faste.splice(i, 1); lagre(); tegn(); break;
+    case 'velg-meg': try { localStorage.setItem(MEG_NOKKEL, b.dataset.navn || ''); } catch (err) { } tegn(); break;
+    case 'bytt-meg': try { localStorage.removeItem(MEG_NOKKEL); } catch (err) { } fane = 'oversikt'; tegn(); window.scrollTo(0, 0); break;
     case 'ny-person': S.personer.push({ navn: 'Navn', lonn: 0 }); lagre(); tegn(); break;
     case 'slett-person': S.personer.splice(i, 1); lagre(); tegn(); break;
   }
@@ -715,7 +729,7 @@ document.addEventListener('change', e => {
     case 'fast-post': S.faste[i].post = v; lagre(); break;
     case 'fast-belop': S.faste[i].belop = tilTall(v) || 0; lagre(); tegn(); break;
     case 'fast-merknad': S.faste[i].merknad = v; lagre(); break;
-    case 'person-navn': { const g = S.personer[i].navn; S.personer[i].navn = v; for (const t of S.transaksjoner) if (t.eier === g) t.eier = v; lagre(); tegn(); break; }
+    case 'person-navn': { const g = S.personer[i].navn; S.personer[i].navn = v; if (lesMeg() === g) try { localStorage.setItem(MEG_NOKKEL, v); } catch (err) { } for (const t of S.transaksjoner) if (t.eier === g) t.eier = v; lagre(); tegn(); break; }
     case 'person-lonn': S.personer[i].lonn = tilTall(v) || 0; lagre(); tegn(); break;
     case 'innst': S.innstillinger[el.dataset.k] = v; lagre(); tegn(); break;
     case 'kort': { const k = S.innstillinger.kort[+el.dataset.n]; k[el.dataset.k] = el.dataset.k === 'startdag' ? Math.max(1, Math.min(28, +v || 1)) : v; lagre(); tegn(); break; }
@@ -959,7 +973,7 @@ window.addEventListener('online', () => { toast('Nett igjen – synkroniserer');
 window.addEventListener('offline', () => settSynkStatus(UTEN_NETT, false, true));
 
 /* ---------- app på telefonen (PWA): virker uten nett ---------- */
-const APP_VERSJON = 9;
+const APP_VERSJON = 10;
 const erInstallert = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.error(e)));

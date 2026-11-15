@@ -29,7 +29,7 @@ Ren statisk side, ingen byggesteg: `index.html`, `style.css`, `app.js` (~980 lin
 **Datamodell** (`S` i app.js, lagres i localStorage `husholdningsokonomi-v1`):
 - `poster` [{navn, budsjett, snitt2026?}] – variable kortbetalte poster
 - `faste` [{gruppe: Inntekt|Fast kostnad|Sparing, post, belop, merknad}]
-- `personer` [{navn, lonn}] – 15 %-ramme = lønn × 15/85
+- `personer` [{navn, lonn}] – 15 %-ramme = lønn × 15/85. Oversikt viser **bare eierens egen ramme** (brukernes ønske 15.11.2026, ikke felles visning). Hvem som eier telefonen lagres bare på enheten i localStorage `husholdningsokonomi-meg` (deles ikke) og velges i Oversikt eller Innstillinger → «Denne telefonen». Private kjøp vises fortsatt i Transaksjoner og Overføring, og lønn/ramme for begge står under Budsjett.
 - `transaksjoner` [{id, kort, dato, tekst, belop, status: fort|privat|utelatt|bekreft, post, fort?, eier?, grunn?, merknad, kvittering?, endret?}]
 - `historikk` (2026-måneder fra regnearket), `ekstra` (arkivtabeller: strøm, SAS-voucher, ferie …), `overfort`, `innstillinger` (kort med fakturastartdag: Amex 20., øvrige 1.). Trumf er én felles konto, men konas ekstrakort får egen faktura, så appen har to kort: «Trumf – hovedkort» (`trumf`) og «Trumf – ekstrakort» (`trumf-ekstra`, lagt til i versjon 9 via `normaliser`). Kjøpene på ekstrakortet går inn i felles budsjett som de andre kortene. Velg kortet i nedtrekkslisten ved import, siden filnavnet ofte bare sier «trumf».
 - `endret` (tidsstempel per del) og `slettet` (gravsteiner) – brukes av synkroniseringen
@@ -52,7 +52,7 @@ Ren statisk side, ingen byggesteg: `index.html`, `style.css`, `app.js` (~980 lin
 ## Publisering
 
 1. Endre filene og commit (forfatter: Hiep Tran).
-2. **Øk versjonsnummeret tre steder, likt:** `?v=N` i `index.html`, `VERSJON` + fillisten i `sw.js`, og `APP_VERSJON` i `app.js` (nå `9`). Ellers viser telefonen gammel kopi.
+2. **Øk versjonsnummeret tre steder, likt:** `?v=N` i `index.html`, `VERSJON` + fillisten i `sw.js`, og `APP_VERSJON` i `app.js` (nå `10`). Ellers viser telefonen gammel kopi.
 3. `git push`. Pages oppdateres på 1–2 minutter.
 
 ## Viktige beslutninger og begrensninger
