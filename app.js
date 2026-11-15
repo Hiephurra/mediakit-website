@@ -5,7 +5,8 @@ const LAGRINGSNOKKEL = 'husholdningsokonomi-v1';
 const STANDARD_KORT = [
   { id: 'amex', navn: 'Amex', startdag: 20, monster: 'amex|american' },
   { id: 'sas', navn: 'SAS Mastercard', startdag: 1, monster: 'sas|eurobonus|mastercard|entercard' },
-  { id: 'trumf', navn: 'Trumf Kredittkort', startdag: 1, monster: 'trumf' },
+  { id: 'trumf', navn: 'Trumf – hovedkort', startdag: 1, monster: 'trumf' },
+  { id: 'trumf-ekstra', navn: 'Trumf – ekstrakort', startdag: 1, monster: 'ekstrakort' },
   { id: 'annet', navn: 'Vipps / kontant / annet', startdag: 1, monster: '' },
 ];
 const STANDARD_POSTER = ['Husholdning', 'Alkohol', 'Transport', 'Lek og fritid', 'Klær og sko', 'Interiør/eksteriør',
@@ -41,7 +42,13 @@ function tomTilstand() {
 function normaliser(s) {
   const t = Object.assign(tomTilstand(), s || {});
   t.innstillinger = Object.assign({}, tomTilstand().innstillinger, t.innstillinger || {});
-  if (!Array.isArray(t.innstillinger.kort) || !t.innstillinger.kort.length) t.innstillinger.kort = STANDARD_KORT;
+  if (!Array.isArray(t.innstillinger.kort) || !t.innstillinger.kort.length) t.innstillinger.kort = STANDARD_KORT.map(k => ({ ...k }));
+  // Trumf: felles konto, men ekstrakortet får egen faktura – derfor eget kort i appen (fra versjon 9).
+  const kortListe = t.innstillinger.kort, trumf = kortListe.findIndex(k => k.id === 'trumf');
+  if (trumf >= 0 && !kortListe.some(k => k.id === 'trumf-ekstra')) {
+    if (kortListe[trumf].navn === 'Trumf Kredittkort') kortListe[trumf] = { ...kortListe[trumf], navn: 'Trumf – hovedkort' };
+    kortListe.splice(trumf + 1, 0, { id: 'trumf-ekstra', navn: 'Trumf – ekstrakort', startdag: kortListe[trumf].startdag || 1, monster: 'ekstrakort' });
+  }
   for (const k of ['poster', 'faste', 'personer', 'transaksjoner', 'historikk', 'ekstra']) if (!Array.isArray(t[k])) t[k] = [];
   t.transaksjoner.sort((a, b) => a.dato.localeCompare(b.dato));
   if (!t.overfort || typeof t.overfort !== 'object') t.overfort = {};
@@ -952,7 +959,7 @@ window.addEventListener('online', () => { toast('Nett igjen – synkroniserer');
 window.addEventListener('offline', () => settSynkStatus(UTEN_NETT, false, true));
 
 /* ---------- app på telefonen (PWA): virker uten nett ---------- */
-const APP_VERSJON = 8;
+const APP_VERSJON = 9;
 const erInstallert = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.error(e)));
