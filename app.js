@@ -23,6 +23,7 @@ const NOKKELORD = [
   [/h&m|hm\.com|lindex|kappahl|cubus|zalando|nille|name it|polarn/i, 'Klær og sko'],
   [/sas |flysas|norwegian|widerøe|wideroe|hotels\.com|booking\.com|airbnb/i, 'Ferie (felles)'],
 ];
+const utleggGrunner = () => ((S.innstillinger && S.innstillinger.utlegg) || []).map(p => 'Utlegg ' + p.navn);
 const INNBETALING = /betaling mottatt|innbetaling|takk for betaling|payment received|payment - thank|innbet\./i;
 const MND = ['Januar', 'Februar', 'Mars', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Desember'];
 
@@ -49,6 +50,8 @@ function normaliser(s) {
     if (kortListe[trumf].navn === 'Trumf Kredittkort') kortListe[trumf] = { ...kortListe[trumf], navn: 'Trumf – hovedkort' };
     kortListe.splice(trumf + 1, 0, { id: 'trumf-ekstra', navn: 'Trumf – ekstrakort', startdag: kortListe[trumf].startdag || 1, monster: 'ekstrakort' });
   }
+  if (!Array.isArray(t.innstillinger.utlegg)) t.innstillinger.utlegg = [];
+  if (!Array.isArray(t.innstillinger.vipps)) t.innstillinger.vipps = [];
   for (const k of ['poster', 'faste', 'personer', 'transaksjoner', 'historikk', 'ekstra']) if (!Array.isArray(t[k])) t[k] = [];
   t.transaksjoner.sort((a, b) => a.dato.localeCompare(b.dato));
   if (!t.overfort || typeof t.overfort !== 'object') t.overfort = {};
@@ -314,8 +317,89 @@ function leggTil(kortId, rader, kilde = 'import') {
     if (t.status === 'bekreft') res.svar++; else res.auto++;
   }
   S.transaksjoner.sort((a, b) => a.dato.localeCompare(b.dato));
+  if (S.innstillinger.vipps.length) res.vipps = matchVipps();
   lagre();
   return res;
+}
+
+/* ---------- Vipps-oppgjør: utlegg for andre kobles mot innbetalinger i banken ---------- */
+function lesBank(rader) {
+  const hode = rader.findIndex(r => r.some(c => /^inn på konto/i.test(String(c).trim())));
+  if (hode < 0) return null;
+  const h = rader[hode].map(c => String(c).trim().toLowerCase());
+  const iD = h.findIndex(c => /dato/.test(c)), iT = h.findIndex(c => /beskrivelse|tekst/.test(c)), iInn = h.findIndex(c => /^inn på konto/.test(c));
+  const ut = [];
+  for (const r of rader.slice(hode + 1)) {
+    const p = datoDeler(r[iD]), b = tilTall(r[iInn]);
+    if (!p || isNaN(b) || b <= 0) continue;
+    ut.push({ dato: p.iso || `${p.y}-${pad(p.b)}-${pad(p.a)}`, tekst: String(r[iT] ?? '').trim(), belop: Math.round(b * 100) / 100 });
+  }
+  return ut;
+}
+function utleggPerson(tekst) {
+  for (const p of S.innstillinger.utlegg || []) {
+    try { if (p.monster && new RegExp(p.monster, 'i').test(tekst)) return p; } catch (e) { }
+  }
+  return null;
+}
+function leggTilVipps(innbet) {
+  const v = S.innstillinger.vipps, tell = new Map(), sett = new Map(); let nye = 0, dup = 0;
+  for (const x of v) { const k = `${x.dato}|${x.belop}|${x.person}`; tell.set(k, (tell.get(k) || 0) + 1); }
+  for (const r of innbet) {
+    const p = utleggPerson(r.tekst); if (!p) continue;
+    const k = `${r.dato}|${r.belop}|${p.navn}`, n = (sett.get(k) || 0) + 1; sett.set(k, n);
+    if (n <= (tell.get(k) || 0)) { dup++; continue; }
+    v.push({ id: nyId(), dato: r.dato, belop: r.belop, person: p.navn }); nye++;
+  }
+  return { nye, dup };
+}
+const dagerMellom = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+/* Samme beløp til øre, kjøpet er gjort 0–3 dager før innbetalingen (runde beløp) eller 0–10 dager (beløp med øre).
+   Entydig treff innen 3 dager føres automatisk. Eldre treff blir et forslag under «Trenger svar». */
+function matchVipps() {
+  const res = { auto: 0, forslag: 0 };
+  const brukt = new Set(S.innstillinger.vipps.map(v => v.t || v.forslag).filter(Boolean));
+  const vipps = S.innstillinger.vipps.filter(v => !v.t && !v.forslag).sort((a, b) => a.dato.localeCompare(b.dato));
+  for (const v of vipps) {
+    const g = 'Utlegg ' + v.person, vindu = Number.isInteger(v.belop) ? 3 : 10;
+    const kand = S.transaksjoner.filter(t => !brukt.has(t.id) && t.belop > 0 && Math.abs(t.belop - v.belop) < 0.005
+      && (t.status === 'fort' || t.status === 'bekreft' || (t.status === 'utelatt' && t.grunn === g))
+      && dagerMellom(t.dato, v.dato) >= 0 && dagerMellom(t.dato, v.dato) <= vindu);
+    if (!kand.length) continue;
+    const best = Math.min(...kand.map(t => dagerMellom(t.dato, v.dato)));
+    const like = kand.filter(t => dagerMellom(t.dato, v.dato) === best);
+    if (like.length !== 1) continue;
+    const t = like[0];
+    brukt.add(t.id);
+    if (best <= 3) {
+      if (!(t.status === 'utelatt' && t.grunn === g)) brukUtfall(t, 'utelatt:' + g);
+      v.t = t.id; res.auto++;
+    } else {
+      t.status = 'bekreft'; t.post = ''; delete t.fort; delete t.eier; delete t.grunn;
+      t.forslag = 'utelatt:' + g; t.sporsmal = `Vipps fra ${v.person}: ${krD(v.belop)} kr ${datoNo(v.dato)}`;
+      v.forslag = t.id; res.forslag++;
+    }
+  }
+  if (res.auto || res.forslag) lagre();
+  return res;
+}
+function importerBank(innbet) {
+  if (!(S.innstillinger.utlegg || []).length) return { feil: true, tekst: 'Legg først inn hvem som får utlegg (Innstillinger → Utlegg for andre), og prøv igjen.' };
+  const v = leggTilVipps(innbet), m = matchVipps();
+  lagre();
+  const apne = S.innstillinger.vipps.filter(x => !x.t && !x.forslag).length;
+  return { feil: false, tekst: `${v.nye} nye Vipps-innbetalinger${v.dup ? `, ${v.dup} fantes fra før` : ''}. ${m.auto} koblet automatisk til kortkjøp som utlegg${m.forslag ? `, ${m.forslag} usikre koblinger venter under «Trenger svar»` : ''}. ${apne} har ikke funnet noe kortkjøp ennå, og kobles når fakturaen legges inn.` };
+}
+function visUtleggStatus() {
+  const pers = S.innstillinger.utlegg || []; if (!pers.length) return '';
+  const vipps = S.innstillinger.vipps;
+  const rader = pers.map(p => {
+    const tr = S.transaksjoner.filter(t => t.status === 'utelatt' && t.grunn === 'Utlegg ' + p.navn);
+    const sum = tr.reduce((s, t) => s + t.belop, 0);
+    const betalt = vipps.filter(v => v.person === p.navn && tr.some(t => t.id === (v.t || v.forslag))).reduce((s, v) => s + v.belop, 0);
+    return `<tr><td>${esc(p.navn)}</td><td class="tall">${tr.length}</td><td class="tall">${krD(sum)}</td><td class="tall">${krD(betalt)}</td><td class="tall"><b>${krD(Math.round((sum - betalt) * 100) / 100)}</b></td></tr>`;
+  }).join('');
+  return `<h3>Utlegg for andre</h3><p class="note">Kjøp gjort for andre og betalt tilbake med Vipps. De telles ikke i husholdningen.</p><div class="panel tabell-wrap"><table><thead><tr><th>Person</th><th class="tall">Kjøp</th><th class="tall">Utlegg</th><th class="tall">Betalt tilbake</th><th class="tall">Gjenstår</th></tr></thead><tbody>${rader}</tbody></table></div>`;
 }
 
 /* ---------- beregninger ---------- */
@@ -460,7 +544,7 @@ function utfallValg(t, knapper = true) {
   const valg = [
     ...S.poster.map(p => ['fort:' + p.navn, p.navn]),
     ...S.personer.map(p => ['privat:' + p.navn, 'Privat – ' + p.navn]),
-    ...UTELATT_GRUNNER.map(g => ['utelatt:' + g, 'Utelatt – ' + g]),
+    ...[...UTELATT_GRUNNER, ...utleggGrunner()].map(g => ['utelatt:' + g, 'Utelatt – ' + g]),
   ];
   if (!knapper) {
     const naa = t.status === 'bekreft' ? 'bekreft:' : utfallsnokkel(t);
@@ -491,6 +575,7 @@ function visSvar() {
       ${topp.map(p => `<button class="liten" data-act="utfall" data-id="${t.id}" data-u="${esc('fort:' + p)}">${esc(p)}</button>`).join('')}
       ${S.personer.map(p => `<button class="liten" data-act="utfall" data-id="${t.id}" data-u="${esc('privat:' + p.navn)}">Privat ${esc(p.navn)}</button>`).join('')}
       <button class="liten" data-act="utfall" data-id="${t.id}" data-u="utelatt:Utlegg for andre">Utlegg for andre</button>
+      ${utleggGrunner().map(g => `<button class="liten" data-act="utfall" data-id="${t.id}" data-u="${esc('utelatt:' + g)}">${esc(g)}</button>`).join('')}
       <button class="liten" data-act="utfall" data-id="${t.id}" data-u="utelatt:Jobb">Jobb</button>
       ${utfallValg(t, false)}
       <input placeholder="Merknad (valgfritt)" data-act="merknad" data-id="${t.id}" value="${esc(t.merknad)}" style="flex:1;min-width:140px">
@@ -501,7 +586,7 @@ function visSvar() {
 function visImporter() {
   const kortValg = S.innstillinger.kort.map(k => `<option value="${k.id}">${esc(k.navn)}</option>`).join('');
   let h = `<h2>Last inn kortfaktura</h2>
-  <p class="note">Eksporter transaksjonene fra nettbanken (CSV eller Excel) og slipp filene her. Overlappende fakturaer går fint – transaksjoner som allerede er lagt inn, hoppes over.</p>
+  <p class="note">Eksporter transaksjonene fra nettbanken (CSV eller Excel) og slipp filene her. Overlappende fakturaer går fint – transaksjoner som allerede er lagt inn, hoppes over. Kontoutskrift fra banken (med «Inn på konto») leses som Vipps-oppgjør for utlegg.</p>
   <div class="rad"><label>Kort: <select id="imp-kort"><option value="">Gjett fra filnavnet</option>${kortValg}</select></label></div>
   <div id="slipp" class="slipp"><b>Slipp filer her</b> eller klikk for å velge<br><span class="liten-tekst">CSV, XLSX eller XLS</span></div>
   <input type="file" id="fil-input" accept=".csv,.txt,.xlsx,.xls,.ods" multiple hidden>`;
@@ -522,13 +607,16 @@ async function importerFiler(filer) {
   const linjer = []; let feil = false;
   for (const f of filer) {
     try {
+      const raw = await lesFil(f);
+      const bank = lesBank(raw);
+      if (bank) { const b = importerBank(bank); linjer.push(`<b>${esc(f.name)}</b> (bank): ${b.tekst}`); if (b.feil) feil = true; continue; }
       const kort = valgt || gjettKort(f.name);
       if (!kort) { linjer.push(`<b>${esc(f.name)}</b>: velg hvilket kort filen gjelder, og prøv igjen.`); feil = true; continue; }
-      const rader = tolkRader(await lesFil(f));
+      const rader = tolkRader(raw);
       if (!rader.length) { linjer.push(`<b>${esc(f.name)}</b>: fant ingen transaksjoner.`); feil = true; continue; }
       const r = leggTil(kort, rader);
       const fra = rader.reduce((a, t) => t.dato < a ? t.dato : a, rader[0].dato), til = rader.reduce((a, t) => t.dato > a ? t.dato : a, rader[0].dato);
-      linjer.push(`<b>${esc(f.name)}</b> (${esc(kortNavn(kort))}, ${datoNo(fra)}–${datoNo(til)}): ${r.nye} nye, ${r.auto} plassert automatisk, ${r.svar} trenger svar${r.duplikater ? `, ${r.duplikater} fantes fra før` : ''}.`);
+      linjer.push(`<b>${esc(f.name)}</b> (${esc(kortNavn(kort))}, ${datoNo(fra)}–${datoNo(til)}): ${r.nye} nye, ${r.auto} plassert automatisk, ${r.svar} trenger svar${r.duplikater ? `, ${r.duplikater} fantes fra før` : ''}.${r.vipps && (r.vipps.auto || r.vipps.forslag) ? ` ${r.vipps.auto} koblet til Vipps-utlegg${r.vipps.forslag ? `, ${r.vipps.forslag} usikre venter under «Trenger svar»` : ''}.` : ''}`);
     } catch (e) { console.error(e); linjer.push(`<b>${esc(f.name)}</b>: ${esc(e.message)}`); feil = true; }
   }
   const svar = S.transaksjoner.filter(t => t.status === 'bekreft').length;
@@ -570,6 +658,7 @@ function visOverforing() {
   h += `</tbody></table></div>`;
   const uteListe = trans.filter(t => t.status === 'utelatt' && t.grunn !== 'Innbetaling');
   if (uteListe.length) h += `<h3>Utelatt fra husholdningen</h3><div class="panel tabell-wrap">${transTabell(uteListe, false)}</div>`;
+  h += visUtleggStatus();
   return h;
 }
 
@@ -653,6 +742,10 @@ function visInnstillinger() {
     <div class="rad"><label>Navn på appen <input value="${esc(i.navn)}" data-act="innst" data-k="navn"></label></div>
     <div class="rad"><label style="flex:1">Spør alltid ved (f.eks. privat eller jobb) <input value="${esc(i.sporAlltid)}" data-act="innst" data-k="sporAlltid" style="width:100%"></label></div>
     <p class="liten-tekst">Ord skilt med | . Gjelder transaksjoner der teksten inneholder ett av ordene.</p></div>
+  <h2>Utlegg for andre</h2><div class="panel">
+    ${(i.utlegg || []).map((p, n) => `<div class="rad"><input value="${esc(p.navn)}" data-act="utlegg" data-n="${n}" data-k="navn" placeholder="Navn"><input value="${esc(p.monster)}" data-act="utlegg" data-n="${n}" data-k="monster" placeholder="Søkeord i bankens Vipps-tekst" style="flex:1;min-width:160px"><button class="liten" data-act="slett-utlegg" data-i="${n}">Fjern</button></div>`).join('')}
+    <div class="rad"><button class="liten" data-act="ny-utlegg">Legg til person</button></div>
+    <p class="liten-tekst">Personer som får utlegg på kortene og Vipper tilbake. Søkeordet er navnet slik det står i bankens innbetaling (flere ord skilles med |). Kjøp som matcher en Vipps-innbetaling føres som «Utlegg» og telles ikke i husholdningen.</p></div>
   <h2>Kort og fakturaperioder</h2><div class="panel tabell-wrap"><table><thead><tr><th>Kort</th><th class="tall">Periode starter dag</th><th>Gjenkjenn filnavn (ord skilt med |)</th></tr></thead><tbody>
     ${i.kort.map((k, n) => `<tr><td><input value="${esc(k.navn)}" data-act="kort" data-n="${n}" data-k="navn"></td><td class="tall"><input type="number" min="1" max="28" value="${k.startdag}" data-act="kort" data-n="${n}" data-k="startdag" style="width:70px"></td><td><input value="${esc(k.monster)}" data-act="kort" data-n="${n}" data-k="monster" style="width:100%"></td></tr>`).join('')}
   </tbody></table><p class="liten-tekst">Amex: perioden går fra den 20. til den 19. Kort med dag 1 følger kalendermåneden.</p></div>
@@ -709,6 +802,8 @@ document.addEventListener('click', async e => {
     case 'slett-fast': S.faste.splice(i, 1); lagre(); tegn(); break;
     case 'velg-meg': try { localStorage.setItem(MEG_NOKKEL, b.dataset.navn || ''); } catch (err) { } tegn(); break;
     case 'bytt-meg': try { localStorage.removeItem(MEG_NOKKEL); } catch (err) { } fane = 'oversikt'; tegn(); window.scrollTo(0, 0); break;
+    case 'ny-utlegg': S.innstillinger.utlegg.push({ navn: 'Navn', monster: '' }); lagre(); tegn(); break;
+    case 'slett-utlegg': if (confirm('Fjerne personen? Transaksjoner som allerede er ført som utlegg beholdes.')) { S.innstillinger.utlegg.splice(i, 1); lagre(); tegn(); } break;
     case 'ny-person': S.personer.push({ navn: 'Navn', lonn: 0 }); lagre(); tegn(); break;
     case 'slett-person': S.personer.splice(i, 1); lagre(); tegn(); break;
   }
@@ -731,6 +826,17 @@ document.addEventListener('change', e => {
     case 'fast-merknad': S.faste[i].merknad = v; lagre(); break;
     case 'person-navn': { const g = S.personer[i].navn; S.personer[i].navn = v; if (lesMeg() === g) try { localStorage.setItem(MEG_NOKKEL, v); } catch (err) { } for (const t of S.transaksjoner) if (t.eier === g) t.eier = v; lagre(); tegn(); break; }
     case 'person-lonn': S.personer[i].lonn = tilTall(v) || 0; lagre(); tegn(); break;
+    case 'utlegg': {
+      const p = S.innstillinger.utlegg[+el.dataset.n]; if (!p) break;
+      if (el.dataset.k === 'navn') {
+        const ny = v.trim(); if (!ny || ny === p.navn) break;
+        const g = 'Utlegg ' + p.navn;
+        for (const t of S.transaksjoner) { if (t.grunn === g) t.grunn = 'Utlegg ' + ny; if (t.forslag === 'utelatt:' + g) t.forslag = 'utelatt:Utlegg ' + ny; }
+        for (const x of S.innstillinger.vipps) if (x.person === p.navn) x.person = ny;
+        p.navn = ny;
+      } else p.monster = v;
+      lagre(); tegn(); break;
+    }
     case 'innst': S.innstillinger[el.dataset.k] = v; lagre(); tegn(); break;
     case 'kort': { const k = S.innstillinger.kort[+el.dataset.n]; k[el.dataset.k] = el.dataset.k === 'startdag' ? Math.max(1, Math.min(28, +v || 1)) : v; lagre(); tegn(); break; }
   }
@@ -973,7 +1079,7 @@ window.addEventListener('online', () => { toast('Nett igjen – synkroniserer');
 window.addEventListener('offline', () => settSynkStatus(UTEN_NETT, false, true));
 
 /* ---------- app på telefonen (PWA): virker uten nett ---------- */
-const APP_VERSJON = 10;
+const APP_VERSJON = 11;
 const erInstallert = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.error(e)));

@@ -1,8 +1,8 @@
 /* Gjør at appen åpner uten nett. Appfilene lagres på enheten; dataene ligger i localStorage/IndexedDB og røres ikke her. */
-const VERSJON = 'v10';
+const VERSJON = 'v11';
 const LAGER = 'husholdningsokonomi-' + VERSJON;
 const XLSX = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-const FILER = ['./', 'index.html', 'style.css?v=10', 'app.js?v=10', 'manifest.webmanifest', 'ikon.svg', 'ikon-180.png', 'ikon-192.png', 'ikon-512.png'];
+const FILER = ['./', 'index.html', 'style.css?v=11', 'app.js?v=11', 'manifest.webmanifest', 'ikon.svg', 'ikon-180.png', 'ikon-192.png', 'ikon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil((async () => {

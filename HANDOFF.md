@@ -71,3 +71,13 @@ Ren statisk side, ingen byggesteg: `index.html`, `style.css`, `app.js` (~980 lin
 3. Posten **Alkohol** har budsjett 0. I regnearket lå den inne i Husholdning. Brukeren bør bestemme beløpet.
 4. **SAS Mastercard** oktober-faktura er ikke lagt inn. Ingen ekte SAS- eller Trumf-eksport er testet ennå, bare en syntetisk Amex-CSV. Første ekte fil kan avsløre kolonneformater som må håndteres.
 5. Mulige forbedringer: bilde- eller PDF-import av kvitteringer med tolkning, påminnelse når fakturadato passerer, budsjett 2027 måned for måned.
+
+## Utlegg for andre og Vipps-oppgjør (versjon 11, 25.11.2026)
+
+Familie som handler på parets kort og Vipper tilbake per kjøp skal ikke telle som husholdning. Kortene viser ikke hvem som handlet (Amex-filene har bare kortmedlemmene i husstanden), så koblingen går via Vipps-innbetalingene i banken.
+
+- **Innstillinger → Utlegg for andre:** personer med navn og søkeord (ord fra navnet slik det står i bankens innbetaling, skilt med |). Lagres i `innstillinger.utlegg`, ikke i koden, fordi koden er offentlig. Hver person gir plasseringen «Utlegg <navn>» (status `utelatt`, `grunn: 'Utlegg <navn>'`), som ikke teller i husholdningen og ikke læres av butikknavn (faller utenfor `engang`-regelen i `klassifiser`).
+- **Legg inn:** en bankfil med kolonnen «Inn på konto» (Sbanken-eksport, CSV med semikolon) kjennes igjen automatisk (`lesBank`). Innbetalinger fra personene lagres i `innstillinger.vipps` og kobles med `matchVipps`.
+- **Matching:** samme beløp til øre, kjøpet 0–3 dager før innbetalingen for runde beløp, 0–10 dager for beløp med øre. Entydig treff innen 3 dager føres automatisk. Eldre treff blir et forslag under «Trenger svar». Like beløp samme dag (flere kandidater) kobles ikke. Matchingen kjøres også etter hver kortimport, så Vipps som kom før fakturaen blir koblet når fakturaen legges inn.
+- **Overføring:** panelet «Utlegg for andre» viser antall kjøp, utlegg, betalt tilbake og gjenstående per person.
+- Testet på ekte data: 32 av 58 innbetalinger fant kjøp i eksisterende Amex- og SAS-filer. Resten gjelder desember/november-fakturaer som ikke er lastet inn ennå, og Vipps for ting som ikke ligger på kort.
