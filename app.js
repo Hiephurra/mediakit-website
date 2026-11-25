@@ -263,7 +263,9 @@ function tolkRader(rader) {
     const rad = rader[r].map(c => String(c));
     let d = finn(rad, /^(transaksjonsdato|kjøpsdato|dato|date|trans\.? ?dato)/);
     if (d < 0) d = finn(rad, /dato|date/);
-    const b = finn(rad, /beløp|belop|amount|^sum|^kr|nok/);
+    // «Beløp» i NOK går foran «Utl. beløp» (utenlandsk beløp, som er 0 på norske kjøp)
+    let b = finn(rad, /^(beløp|belop|amount)$/);
+    if (b < 0) b = rad.findIndex(c => { const x = String(c).toLowerCase().trim(); return !/utl|utenl|valuta/.test(x) && /beløp|belop|amount|^sum|^kr|nok/.test(x); });
     if (d > -1 && b > -1) {
       hode = r; iDato = d; iBelop = b;
       iTekst = finn(rad, /beskrivelse|spesifikasjon|tekst|description|forklaring|butikk|merchant|detaljer|mottaker|transaksjon$|navn/);
@@ -363,7 +365,7 @@ function matchVipps() {
   for (const v of vipps) {
     const g = 'Utlegg ' + v.person, vindu = Number.isInteger(v.belop) ? 3 : 10;
     const kand = S.transaksjoner.filter(t => !brukt.has(t.id) && t.belop > 0 && Math.abs(t.belop - v.belop) < 0.005
-      && (t.status === 'fort' || t.status === 'bekreft' || (t.status === 'utelatt' && t.grunn === g))
+      && (t.status === 'fort' || t.status === 'bekreft' || (t.status === 'utelatt' && (t.grunn === g || t.grunn === 'Utlegg for andre')))
       && dagerMellom(t.dato, v.dato) >= 0 && dagerMellom(t.dato, v.dato) <= vindu);
     if (!kand.length) continue;
     const best = Math.min(...kand.map(t => dagerMellom(t.dato, v.dato)));
@@ -371,7 +373,7 @@ function matchVipps() {
     if (like.length !== 1) continue;
     const t = like[0];
     brukt.add(t.id);
-    if (best <= 3) {
+    if (best <= 3 || t.status === 'utelatt') { // allerede ført som utlegg: bare koble og gi riktig person
       if (!(t.status === 'utelatt' && t.grunn === g)) brukUtfall(t, 'utelatt:' + g);
       v.t = t.id; res.auto++;
     } else {
@@ -1079,7 +1081,7 @@ window.addEventListener('online', () => { toast('Nett igjen – synkroniserer');
 window.addEventListener('offline', () => settSynkStatus(UTEN_NETT, false, true));
 
 /* ---------- app på telefonen (PWA): virker uten nett ---------- */
-const APP_VERSJON = 11;
+const APP_VERSJON = 12;
 const erInstallert = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.error(e)));
